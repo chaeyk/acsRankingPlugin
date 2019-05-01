@@ -230,10 +230,10 @@ namespace acsRankingPlugin
             [Option("name", HelpText = "Instance Name (default is acsRankingPlugin)")]
             public string Name { get; set; } = "acsRankingPlugin";
 
-            [Option("server-port", Required = true, HelpText = "Server's local port.")]
+            [Option("server-port", Required = true, HelpText = "Server's local UDP port.")]
             public int ServerPort { get; set; }
 
-            [Option("plugin-port", Required = true, HelpText = "This plungin's listening port.")]
+            [Option("plugin-port", Required = true, HelpText = "This plugin's listening UDP port.")]
             public int PluginPort { get; set; }
         }
 
@@ -256,6 +256,10 @@ namespace acsRankingPlugin
                         Environment.Exit(1);
                     }
                     options = o;
+                })
+                .WithNotParsed<Options>(errors =>
+                {
+                    Environment.Exit(1);
                 });
 
             leaderBoard = LeaderBoard.Load($"{options.Name}-{options.PluginPort}-{options.ServerPort}");
@@ -506,7 +510,7 @@ namespace acsRankingPlugin
                                     else
                                     {
                                         driver.Sent = true;
-                                        broadcastChat(client, $"({car_id}) {driver.Name} 님이 새로운 {driver.Rank}위 기록({driver.FormattedTime})을 달성했습니다.");
+                                        broadcastChat(client, $"{driver.Name} 님이 새로운 {driver.Rank}위 기록({driver.FormattedTime})을 달성했습니다.");
                                     }
                                 }
                             }
