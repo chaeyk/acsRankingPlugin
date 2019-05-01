@@ -1,0 +1,7 @@
+obj
+bin
+*.user
+
+/.vs
+/packages
+/acsRankingPlugin/JsonNet.PrivateSettersContractResolvers
