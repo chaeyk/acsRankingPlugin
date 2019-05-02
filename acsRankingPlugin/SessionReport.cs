@@ -203,7 +203,7 @@ namespace acsRankingPlugin
             var sb = new StringBuilder();
             sb.AppendLine($"Leader Board ({StartTime} ~ Now)");
             sb.AppendLine("=================================");
-            sb.AppendLine("순위   시간       이름");
+            sb.AppendLine("순위   시간        이름");
             sb.AppendLine("=================================");
             foreach (var driver in Drivers)
             {
