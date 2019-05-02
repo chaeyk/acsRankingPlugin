@@ -202,14 +202,14 @@ namespace acsRankingPlugin
 
             var sb = new StringBuilder();
             sb.AppendLine($"Leader Board ({StartTime} ~ Now)");
-            sb.AppendLine("=================================================");
-            sb.AppendLine("순위  이름                시간");
-            sb.AppendLine("=================================================");
+            sb.AppendLine("=================================");
+            sb.AppendLine("순위   시간       이름");
+            sb.AppendLine("=================================");
             foreach (var driver in Drivers)
             {
-                sb.AppendLine(string.Format("{0,4}    {1,-20} {2,-9}", driver.Rank, driver.Name, driver.FormattedTime));
+                sb.AppendLine(string.Format("{0,4}   {1,-9}  {2}", driver.Rank, driver.FormattedTime, driver.Name));
             }
-            sb.AppendLine("=================================================");
+            sb.AppendLine("=================================");
             return sb.ToString();
         }
 
@@ -225,7 +225,14 @@ namespace acsRankingPlugin
             });
             for (var i = 0; i < Drivers.Count; i++)
             {
-                Drivers[i].Rank = (UInt32) i + 1;
+                if (i > 0 && Drivers[i-1].Time == Drivers[i].Time) // 동률
+                {
+                    Drivers[i].Rank = Drivers[i - 1].Rank;
+                }
+                else
+                {
+                    Drivers[i].Rank = (UInt32)i + 1;
+                }
             }
         }
     }
@@ -246,7 +253,7 @@ namespace acsRankingPlugin
         {
             get
             {
-                return (Time == TimeSpan.MaxValue) ? "-" : Time.ToString("mm\\:ss\\.FFF");
+                return (Time == TimeSpan.MaxValue) ? "oo:oo.ooo" : Time.ToString("mm\\:ss\\.FFF");
             }
         }
 
