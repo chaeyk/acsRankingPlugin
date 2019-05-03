@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -312,8 +313,9 @@ namespace acsRankingPlugin
                             //Console.WriteLine("CHAT FROM CAR:" + (int)car_id + " MSG:" + msg);
                             if (msg == "?help")
                             {
+                                var exeVersion = Assembly.GetExecutingAssembly().GetName().Version;
                                 var sb = new StringBuilder();
-                                sb.AppendLine("acsRankingPlugin 명령어");
+                                sb.AppendLine($"acsRankingPlugin {exeVersion} 명령어");
                                 sb.AppendLine("=================================");
                                 sb.AppendLine("?help : 도움말 표시");
                                 sb.AppendLine("?rank : 리더보드 표시");
@@ -562,7 +564,7 @@ namespace acsRankingPlugin
                                 var rtime = br.ReadUInt32();
                                 var rlaps = br.ReadUInt16();
                                 var has_completed_flag = br.ReadByte() != 0;
-                                Console.WriteLine((i + 1).ToString() + ": CAR_ID:" + rcar_id + " TIME:" + rtime + " LAPS:" + rlaps + " HAS COMPLETED:" + has_completed_flag);
+                                //Console.WriteLine((i + 1).ToString() + ": CAR_ID:" + rcar_id + " TIME:" + rtime + " LAPS:" + rlaps + " HAS COMPLETED:" + has_completed_flag);
 
                             }
 
