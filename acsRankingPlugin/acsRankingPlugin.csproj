@@ -82,7 +82,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ACSClient.cs" />
     <Compile Include="ACSProtocol.cs" />
+    <Compile Include="ACSProtocolReader.cs" />
+    <Compile Include="ACSProtocolWriter.cs" />
     <Compile Include="JsonNet.PrivateSettersContractResolvers\PrivateSettersContractResolvers.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
