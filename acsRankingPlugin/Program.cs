@@ -225,6 +225,22 @@ namespace acsRankingPlugin
             SendToClient(client, buffer, (int)bw.BaseStream.Length);
         }
 
+        public static void sendAdminMessage(UdpClient client, string message)
+        {
+            // Prepare the packet to send
+            var buffer = new byte[255];
+            var bw = new BinaryWriter(new MemoryStream(buffer));
+
+            // Packet ID
+            bw.Write(ACSProtocol.ACSP_ADMIN_COMMAND);
+
+
+            // Message
+            writeStringW(bw, message);
+
+            SendToClient(client, buffer, (int)bw.BaseStream.Length);
+        }
+
         public class Options
         {
             [Option("name", HelpText = "Instance Name (default is acsRankingPlugin)")]
@@ -296,11 +312,33 @@ namespace acsRankingPlugin
                             //Console.WriteLine("CHAT FROM CAR:" + (int)car_id + " MSG:" + msg);
                             if (msg == "?help")
                             {
-                                sendChat(client, car_id, "acsRankingPlugin 명령어: /help /rank");
+                                var sb = new StringBuilder();
+                                sb.AppendLine("acsRankingPlugin 명령어");
+                                sb.AppendLine("=================================");
+                                sb.AppendLine("?help : 도움말 표시");
+                                sb.AppendLine("?rank : 리더보드 표시");
+                                sb.AppendLine("?ballast [kg] : 자기 차 무게 증가");
+                                sb.AppendLine("=================================");
+
+                                sendChat(client, car_id, sb.ToString());
                             }
                             else if (msg == "?rank")
                             {
                                 sendChat(client, car_id, leaderBoard.ToString());
+                            }
+                            else if (msg.StartsWith("?ballast "))
+                            {
+                                var weightStr = msg.Substring(9).Trim();
+                                int weight;
+                                if (Int32.TryParse(weightStr, out weight) && weight >= 0 && weight <= 150)
+                                {
+                                    sendAdminMessage(client, $"/ballast {car_id} {weight}");
+                                    sendChat(client, car_id, $"?ballast 명령어를 실행했습니다.");
+                                }
+                                else
+                                {
+                                    sendChat(client, car_id, $"무게를 잘못 입력했습니다: {weightStr}");
+                                }
                             }
                         }
                         break;
