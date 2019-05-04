@@ -24,10 +24,13 @@ namespace acsRankingPlugin
 
             [Option("plugin-port", Required = true, HelpText = "This plugin's listening UDP port.")]
             public int PluginPort { get; set; }
+
+            [Option("reset", HelpText = "Reset data.")]
+            public bool Reset { get; set; }
         }
 
         static Options options;
-        static LeaderBoard leaderBoard;
+        static Leaderboard leaderboard;
 
         static void Main(string[] args)
         {
@@ -51,7 +54,9 @@ namespace acsRankingPlugin
                     Environment.Exit(1);
                 });
 
-            leaderBoard = LeaderBoard.Load($"{options.Name}-{options.PluginPort}-{options.ServerPort}");
+            var name = $"{options.Name}-{options.PluginPort}-{options.ServerPort}";
+            var storagePath = $"{Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}\\acsRankingPlugin";
+            leaderboard = new Leaderboard(name, storagePath, options.Reset);
 
             var acsClient = new ACSClient(options.PluginPort, options.ServerPort);
 
@@ -66,14 +71,14 @@ namespace acsRankingPlugin
                     sb.AppendLine("=================================");
                     sb.AppendLine("?help : 도움말 표시");
                     sb.AppendLine("?rank : 리더보드 표시");
-                    sb.AppendLine("?ballast [kg] : 자기 차 무게 증가");
+                    sb.AppendLine("?ballast [숫자] : 자기 차 무게 증가 (kg)");
                     sb.AppendLine("=================================");
 
                     acsClient.SendChat(eventData.CarId, sb.ToString());
                 }
                 else if (eventData.Message == "?rank")
                 {
-                    acsClient.SendChat(eventData.CarId, leaderBoard.ToString());
+                    acsClient.SendChat(eventData.CarId, leaderboard.ToString());
                 }
                 else if (eventData.Message.StartsWith("?ballast "))
                 {
@@ -95,24 +100,21 @@ namespace acsRankingPlugin
                 Console.WriteLine($"CLIENT LOADED: {carId}");
                 acsClient.SendChat(carId, "순위 보여주는 기능 테스트 중입니다.");
                 acsClient.SendChat(carId, "도움말은 ?help");
-                acsClient.SendChat(carId, leaderBoard.ToString());
+                acsClient.SendChat(carId, leaderboard.ToString());
             };
             acsClient.OnVersion += (packetId, protocolVersion) => Console.WriteLine("PROTOCOL VERSION IS:" + (int)protocolVersion);
             acsClient.OnNewSession += (byte packetId, ref SessionInfoEvent eventData) =>
             {
                 Console.WriteLine("New session started");
-                acsClient.BroadcastChat(leaderBoard.ToString());
+
+                acsClient.BroadcastChat(leaderboard.ToString());
                 acsClient.OnSessionInfo?.Invoke(packetId, ref eventData);
             };
             acsClient.OnSessionInfo += (byte packetId, ref SessionInfoEvent eventData) =>
             {
                 Console.WriteLine($"PROTOCOL: {eventData.Version}, SESSION {eventData.Name} {eventData.SessionIndex + 1}/{eventData.SessionCount}, TRACK: {eventData.Track}");
 
-                if (leaderBoard.Track != eventData.Track)
-                {
-                    leaderBoard = new LeaderBoard(leaderBoard.Name, eventData.Track);
-                    Console.WriteLine("New Leaderboard created.");
-                }
+                leaderboard.Track = eventData.Track;
             };
             acsClient.OnEndSession += (packetId, reportFile) => Console.WriteLine($"ACSP_END_SESSION. REPORT JSON AVAILABLE AT: {reportFile}");
             acsClient.OnClientEvent += (byte packetId, ref ClientEventEvent eventData) =>
@@ -131,11 +133,10 @@ namespace acsRankingPlugin
             {
                 Console.WriteLine($"CarInfo CAR:{eventData.CarId} {eventData.Model} [{eventData.Skin}] DRIVER:{eventData.DriverName} TEAM:{eventData.DriverTeam} GUID:{eventData.DriverGuid} CONNECTED:{eventData.IsConnected}");
 
-                var driver = leaderBoard.RegisterDriver(eventData.CarId, eventData.DriverName, eventData.DriverGuid);
-                if (!driver.Sent)
+                var newRecord = leaderboard.RegisterCar(eventData.CarId, eventData.Model, eventData.DriverName);
+                if (newRecord != null)
                 {
-                    driver.Sent = true;
-                    acsClient.BroadcastChat($"({eventData.CarId}) {driver.Name} 님이 새로운 {driver.Rank}위 기록({driver.FormattedTime})을 달성했습니다.");
+                    acsClient.BroadcastChat($"({eventData.CarId}) {newRecord.DriverName} 님이 새로운 {newRecord.Rank}위 기록({newRecord.Laptime.LaptimeFormat()})을 달성했습니다.");
                 }
             };
             acsClient.OnCarUpdate += (byte packetId, ref CarUpdateEvent eventData) =>
@@ -144,13 +145,13 @@ namespace acsRankingPlugin
             {
                 Console.WriteLine($"ACSP_NEW_CONNECTION {eventData.DriverName} ({eventData.DriverGuid}), {eventData.CarModel} [{eventData.CarSkin}] ({eventData.CarId})");
 
-                leaderBoard.RegisterDriver(eventData.CarId, eventData.DriverName, eventData.DriverGuid);
+                leaderboard.RegisterCar(eventData.CarId, eventData.CarModel, eventData.DriverName);
             };
             acsClient.OnConnectionClosed += (byte packetId, ref ConnectionEvent eventData) =>
             {
                 Console.WriteLine($"ACSP_CONNECTION_CLOSED {eventData.DriverName} ({eventData.DriverGuid}), {eventData.CarModel} [{eventData.CarSkin}] ({eventData.CarId})");
 
-                leaderBoard.LeaveDriver(eventData.CarId);
+                leaderboard.UnregisterCar(eventData.CarId);
             };
             acsClient.OnLapCompleted += (byte packetId, ref LapCompletedEvent eventData) =>
             {
@@ -158,22 +159,15 @@ namespace acsRankingPlugin
 
                 if (eventData.Cuts <= 0)
                 {
-                    var driver = leaderBoard.ReportDriver(eventData.CarId, eventData.LapTime);
-                    if (driver.IsUnknownDriver)
+                    NewRecord newRecord;
+                    if (!leaderboard.RegisterLaptime(eventData.CarId, eventData.LapTime, out newRecord))
                     {
                         acsClient.GetCarInfo(eventData.CarId);
                     }
-                    if (driver.Time == eventData.LapTime)
+
+                    if (newRecord != null)
                     {
-                        if (driver.IsUnknownDriver)
-                        {
-                            driver.Sent = false;
-                        }
-                        else
-                        {
-                            driver.Sent = true;
-                            acsClient.BroadcastChat($"{driver.Name} 님이 새로운 {driver.Rank}위 기록({driver.FormattedTime})을 달성했습니다.");
-                        }
+                        acsClient.BroadcastChat($"{newRecord.DriverName} 님이 새로운 {newRecord.Rank}위 기록({newRecord.Laptime.LaptimeFormat()})을 달성했습니다.");
                     }
                 }
             };
