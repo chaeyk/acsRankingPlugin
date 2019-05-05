@@ -73,11 +73,17 @@
     <Reference Include="CommandLine, Version=2.5.0.0, Culture=neutral, PublicKeyToken=5a870481e358d379, processorArchitecture=MSIL">
       <HintPath>..\packages\CommandLineParser.2.5.0\lib\net45\CommandLine.dll</HintPath>
     </Reference>
+    <Reference Include="NeoSmart.AsyncLock, Version=0.3.0.2, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\NeoSmart.AsyncLock.0.3.0.2\lib\net45\NeoSmart.AsyncLock.dll</HintPath>
+    </Reference>
     <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.12.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.ValueTuple, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ValueTuple.4.5.0\lib\netstandard1.0\System.ValueTuple.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -91,7 +97,9 @@
     <Compile Include="ACSProtocolReader.cs" />
     <Compile Include="ACSProtocolWriter.cs" />
     <Compile Include="Extensions.cs" />
+    <Compile Include="IStorage.cs" />
     <Compile Include="JsonNet.PrivateSettersContractResolvers\PrivateSettersContractResolvers.cs" />
+    <Compile Include="JsonStorage.cs" />
     <Compile Include="Leaderboard.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

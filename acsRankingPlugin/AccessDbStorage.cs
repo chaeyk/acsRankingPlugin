@@ -1,43 +1,23 @@
-﻿using System;
+﻿using NeoSmart.AsyncLock;
+using System;
 using System.Collections.Generic;
 using System.Data.OleDb;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace acsRankingPlugin
 {
-    class DriverLaptime
-    {
-        public string Car { get; set; }
-        public string Driver { get; set; }
-        public TimeSpan Laptime { get; set; }
-
-        public DriverLaptime(string car, string driver, TimeSpan laptime)
-        {
-            Car = car;
-            Driver = driver;
-            Laptime = laptime;
-        }
-
-        public DriverLaptime(string car, string driver, int laptime) : this(car, driver, TimeSpan.FromMilliseconds(laptime))
-        {
-        }
-
-        public override string ToString()
-        {
-            return $"car:{Car}, driver:{Driver}, laptime:{Laptime}";
-        }
-    }
-
-    class AccessDbStorage : IDisposable
+    class AccessDbStorage : IStorage, IDisposable
     {
         private readonly OleDbConnection _conn;
-
-        public DateTime Timestamp;
+        private AsyncLock _lock = new AsyncLock();
 
         public AccessDbStorage(string path, string name, bool reset = false)
         {
             var adbfile = $"{path}\\{name}-storage-v1.accdb";
             var connstr = $"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={adbfile};Jet OLEDB:Engine Type=5";
+
+            Directory.CreateDirectory(path);
 
             if (reset)
             {
@@ -55,8 +35,6 @@ namespace acsRankingPlugin
                     throw;
                 }
             }
-
-            Timestamp = File.GetCreationTime(adbfile);
 
             _conn = new OleDbConnection(connstr);
             _conn.Open();
@@ -98,6 +76,13 @@ namespace acsRankingPlugin
 
             cat.Tables.Append(trackTable);
 
+            var timestampTable = new ADOX.Table();
+
+            timestampTable.Name = "Timestam";
+            timestampTable.Columns.Append("v");
+
+            cat.Tables.Append(timestampTable);
+
             var conn = cat.ActiveConnection as ADODB.Connection;
             if (conn != null)
             {
@@ -105,6 +90,7 @@ namespace acsRankingPlugin
                 {
                     object recordsAffected;
                     conn.Execute("insert into Track (name) values (' ')", out recordsAffected);
+                    conn.Execute($"insert into Timestam (v) values ('{DateTime.Now}')", out recordsAffected);
                 }
                 finally
                 {
@@ -113,106 +99,146 @@ namespace acsRankingPlugin
             }
         }
 
-        public string GetTrack()
+        public async Task<DateTime> GetTimestampAsync()
         {
-            var command = new OleDbCommand("select name from Track", _conn);
-            return (string)command.ExecuteScalar();
-
-        }
-
-        public void SetTrack(string track)
-        {
-            var oldTrack = GetTrack();
-            if (track == oldTrack)
+            using (await _lock.LockAsync())
             {
-                return;
-            }
-
-            Console.WriteLine($"Track changed [{oldTrack} -> {track}]. Reset Database.");
-
-            var command1 = new OleDbCommand("delete from DriverLaptime", _conn);
-            command1.ExecuteNonQuery();
-
-            var command2 = new OleDbCommand("update Track set name = @name", _conn);
-            command2.Parameters.AddWithValue("@name", track);
-            if (command2.ExecuteNonQuery() != 1)
-            {
-                throw new Exception("Track update failed.");
+                var command = new OleDbCommand("select v from Timestam", _conn);
+                return DateTime.Parse((string)await command.ExecuteScalarAsync());
             }
         }
 
-
-        public void Insert(DriverLaptime driverLaptime)
+        public async Task<string> GetTrackAsync()
         {
-            var command = new OleDbCommand("insert into DriverLaptime (car, driver, laptime) values (@car, @driver, @laptime)", _conn);
-            command.Parameters.AddWithValue("@car", driverLaptime.Car);
-            command.Parameters.AddWithValue("@driver", driverLaptime.Driver);
-            command.Parameters.AddWithValue("@laptime", driverLaptime.Laptime.TotalMilliseconds);
-            command.ExecuteNonQuery();
-        }
-
-        public void Update(DriverLaptime driverLaptime)
-        {
-            var command = new OleDbCommand($"update DriverLaptime set laptime = @laptime where car = @car and driver = @driver", _conn);
-            command.Parameters.AddWithValue("@laptime", driverLaptime.Laptime.TotalMilliseconds);
-            command.Parameters.AddWithValue("@car", driverLaptime.Car);
-            command.Parameters.AddWithValue("@driver", driverLaptime.Driver);
-            var updated = command.ExecuteNonQuery();
-            if (updated == 0)
+            using (await _lock.LockAsync())
             {
-                throw new Exception($"SQL update statement failed: {driverLaptime}");
+                var command = new OleDbCommand("select name from Track", _conn);
+                return (string)await command.ExecuteScalarAsync();
             }
         }
 
-        public DriverLaptime Get(string car, string driver)
+        public async Task SetTrackAsync(string track)
         {
-            var command = new OleDbCommand("select car, driver, laptime from DriverLaptime where car = @car and driver = @driver", _conn);
-            command.Parameters.AddWithValue("@car", car);
-            command.Parameters.AddWithValue("@driver", driver);
-            using (var reader = command.ExecuteReader())
+            using (await _lock.LockAsync())
             {
-                if (!reader.Read())
+                var oldTrack = await GetTrackAsync();
+                if (track == oldTrack)
                 {
-                    return null;
+                    return;
                 }
 
-                return new DriverLaptime(
-                    reader.GetFieldValue<string>(0),
-                    reader.GetFieldValue<string>(1),
-                    reader.GetInt32(2)
-                );
+                Console.WriteLine($"Track changed [{oldTrack} -> {track}]. Reset Database.");
+
+                var command = new OleDbCommand("update Track set name = @name", _conn);
+                command.Parameters.AddWithValue("@name", track);
+                if (await command.ExecuteNonQueryAsync() != 1)
+                {
+                    throw new Exception("Track update failed.");
+                }
+
+                await ResetAsync();
             }
         }
 
-        public List<DriverLaptime> List()
+        public async Task InsertAsync(DriverLaptime driverLaptime)
+        {
+            using (await _lock.LockAsync())
+            {
+                var command = new OleDbCommand("insert into DriverLaptime (car, driver, laptime) values (@car, @driver, @laptime)", _conn);
+                command.Parameters.AddWithValue("@car", driverLaptime.Car);
+                command.Parameters.AddWithValue("@driver", driverLaptime.Driver);
+                command.Parameters.AddWithValue("@laptime", driverLaptime.Laptime.TotalMilliseconds);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        public async Task UpdateAsync(DriverLaptime driverLaptime)
+        {
+            using (await _lock.LockAsync())
+            {
+                var command = new OleDbCommand($"update DriverLaptime set laptime = @laptime where car = @car and driver = @driver", _conn);
+                command.Parameters.AddWithValue("@laptime", driverLaptime.Laptime.TotalMilliseconds);
+                command.Parameters.AddWithValue("@car", driverLaptime.Car);
+                command.Parameters.AddWithValue("@driver", driverLaptime.Driver);
+                var updated = command.ExecuteNonQuery();
+                if (updated == 0)
+                {
+                    throw new Exception($"SQL update statement failed: {driverLaptime}");
+                }
+            }
+        }
+
+        public async Task<DriverLaptime> GetAsync(string car, string driver)
+        {
+            using (await _lock.LockAsync())
+            {
+                var command = new OleDbCommand("select car, driver, laptime from DriverLaptime where car = @car and driver = @driver", _conn);
+                command.Parameters.AddWithValue("@car", car);
+                command.Parameters.AddWithValue("@driver", driver);
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    if (!await reader.ReadAsync())
+                    {
+                        return null;
+                    }
+
+                    return new DriverLaptime(
+                        await reader.GetFieldValueAsync<string>(0),
+                        await reader.GetFieldValueAsync<string>(1),
+                        reader.GetInt32(2)
+                    );
+                }
+            }
+        }
+
+        public async Task<List<DriverLaptime>> ListAsync()
         {
             var result = new List<DriverLaptime>();
 
-            var command = new OleDbCommand("select car, driver, laptime from DriverLaptime order by laptime asc", _conn);
-            using (var reader = command.ExecuteReader())
+            using (await _lock.LockAsync())
             {
-                while (reader.Read())
+                var command = new OleDbCommand("select car, driver, laptime from DriverLaptime order by laptime asc", _conn);
+                using (var reader = await command.ExecuteReaderAsync())
                 {
-                    result.Add(new DriverLaptime(
-                        reader.GetFieldValue<string>(0),
-                        reader.GetFieldValue<string>(1),
-                        reader.GetInt32(2)
-                    ));
+                    while (await reader.ReadAsync())
+                    {
+                        result.Add(new DriverLaptime(
+                            await reader.GetFieldValueAsync<string>(0),
+                            await reader.GetFieldValueAsync<string>(1),
+                            reader.GetInt32(2)
+                        ));
+                    }
                 }
             }
             return result;
         }
 
-        public int GetRank(TimeSpan laptime)
+        public async Task<int> GetRankAsync(TimeSpan laptime)
         {
-            var command = new OleDbCommand("select count(*) from DriverLaptime where laptime < @laptime", _conn);
-            command.Parameters.AddWithValue("@laptime", laptime.TotalMilliseconds);
-            return (int)command.ExecuteScalar() + 1;
+            using (await _lock.LockAsync())
+            {
+                var command = new OleDbCommand("select count(*) from DriverLaptime where laptime < @laptime", _conn);
+                command.Parameters.AddWithValue("@laptime", laptime.TotalMilliseconds);
+                return (int)await command.ExecuteScalarAsync() + 1;
+            }
+        }
+
+        public async Task ResetAsync()
+        {
+            using (await _lock.LockAsync())
+            {
+                var command = new OleDbCommand("delete from DriverLaptime", _conn);
+                await command.ExecuteNonQueryAsync();
+
+                var command2 = new OleDbCommand("update Timestam set v = @v", _conn);
+                command2.Parameters.AddWithValue("@v", DateTime.Now.ToString());
+                await command2.ExecuteNonQueryAsync();
+            }
         }
 
         public void Dispose()
         {
-            throw new NotImplementedException();
+            _conn.Close();
         }
     }
 }

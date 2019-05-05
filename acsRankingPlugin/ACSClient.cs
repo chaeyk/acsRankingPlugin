@@ -1,7 +1,9 @@
-﻿using System;
+﻿using NeoSmart.AsyncLock;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 
 namespace acsRankingPlugin
 {
@@ -11,6 +13,8 @@ namespace acsRankingPlugin
         private IPEndPoint _remoteEndpoint;
         private UdpClient _udpClient;
 
+        private AsyncLock _lock = new AsyncLock();
+
         public ACSClient(int localPort, int remotePort)
         {
             _localEndpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), localPort);
@@ -19,19 +23,23 @@ namespace acsRankingPlugin
             _udpClient = new UdpClient(_localEndpoint);
         }
 
+        /*
         protected byte[] Receive()
         {
             var ep = new IPEndPoint(IPAddress.Any, 0);
             return _udpClient.Receive(ref ep);
         }
+        */
 
-        protected int Send(ACSProtocolWriter writer)
+        protected async Task<int> SendAsync(ACSProtocolWriter writer)
         {
-
-            return _udpClient.Send(writer.Buffer, (int) writer.Length, _remoteEndpoint);
+            using (await _lock.LockAsync())
+            {
+                return await _udpClient.SendAsync(writer.Buffer, (int)writer.Length, _remoteEndpoint);
+            }
         }
 
-        public void SetSessionInfo(byte sessionIndex, string sessionName, byte type, uint laps, TimeSpan time, TimeSpan waitTime)
+        public Task SetSessionInfoAsync(byte sessionIndex, string sessionName, byte type, uint laps, TimeSpan time, TimeSpan waitTime)
         {
             var writer = new ACSProtocolWriter();
 
@@ -43,37 +51,37 @@ namespace acsRankingPlugin
             writer.Write((uint)time.TotalSeconds);
             writer.Write((uint)waitTime.TotalSeconds);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
-        public void GetSessionInfo(Int16 sessionIndex = -1 /* current index */)
+        public Task GetSessionInfoAsync(Int16 sessionIndex = -1 /* current index */)
         {
             var writer = new ACSProtocolWriter();
 
             writer.Write(ACSProtocol.ACSP_GET_SESSION_INFO);
             writer.Write(sessionIndex);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
-        public void GetCarInfo(byte carId)
+        public Task GetCarInfoAsync(byte carId)
         {
             var writer = new ACSProtocolWriter();
 
             writer.Write(ACSProtocol.ACSP_GET_CAR_INFO);
             writer.Write(carId);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
-        public void EnableRealtimeReport(TimeSpan interval)
+        public Task EnableRealtimeReportAsync(TimeSpan interval)
         {
             var writer = new ACSProtocolWriter();
 
             writer.Write(ACSProtocol.ACSP_REALTIMEPOS_INTERVAL);
             writer.Write((UInt16)interval.TotalMilliseconds);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
         // 서버로 보낼 수 있는 메시지 길이는 한계가 있으므로 잘라서 보내야 한다.
@@ -101,7 +109,7 @@ namespace acsRankingPlugin
         }
 
         // 여러 줄로 된 메시지는 줄 단위로 쪼개서 보낸다
-        public void SendChat(byte carId, string message)
+        public async Task SendChatAsync(byte carId, string message)
         {
             var lines = SplitMessage(message, 62);
             foreach (var line in lines)
@@ -112,11 +120,11 @@ namespace acsRankingPlugin
                 writer.Write(carId);
                 writer.WriteStringW(line);
 
-                Send(writer);
+                await SendAsync(writer);
             }
         }
 
-        public void BroadcastChat(string message)
+        public async Task BroadcastChatAsync(string message)
         {
             var lines = SplitMessage(message, 62);
             foreach (var line in lines)
@@ -126,34 +134,34 @@ namespace acsRankingPlugin
                 writer.Write(ACSProtocol.ACSP_BROADCAST_CHAT);
                 writer.WriteStringW(line);
 
-                Send(writer);
+                await SendAsync(writer);
             }
         }
 
-        public void Kick(byte userId)
+        public Task KickAsync(byte userId)
         {
             var writer = new ACSProtocolWriter();
 
             writer.Write(ACSProtocol.ACSP_KICK_USER);
             writer.Write(userId);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
-        public void SendAdminMessage(string message)
+        public Task SendAdminMessageAsync(string message)
         {
             var writer = new ACSProtocolWriter();
 
             writer.Write(ACSProtocol.ACSP_ADMIN_COMMAND);
             writer.WriteStringW(message);
 
-            Send(writer);
+            return SendAsync(writer);
         }
 
         public delegate void OnErrorDelegate(byte packetId, string message);
         public OnErrorDelegate OnError;
 
-        public delegate void OnChatDelegate(byte packetId, ref ChatEvent eventData);
+        public delegate void OnChatDelegate(byte packetId, ChatEvent eventData);
         public OnChatDelegate OnChat;
 
         public delegate void OnClientLoadedDelegate(byte packetId, byte carId);
@@ -162,36 +170,37 @@ namespace acsRankingPlugin
         public delegate void OnVersionDelegate(byte packetId, byte protocolVersion);
         public OnVersionDelegate OnVersion;
 
-        public delegate void OnNewSessionDelegate(byte packetId, ref SessionInfoEvent eventData);
+        public delegate void OnNewSessionDelegate(byte packetId, SessionInfoEvent eventData);
         public OnNewSessionDelegate OnNewSession;
 
-        public delegate void OnSessionInfoDelegate(byte packetId, ref SessionInfoEvent eventData);
+        public delegate void OnSessionInfoDelegate(byte packetId, SessionInfoEvent eventData);
         public OnSessionInfoDelegate OnSessionInfo;
 
         public delegate void OnEndSessionDelegate(byte packetId, string reportFile);
         public OnEndSessionDelegate OnEndSession;
 
-        public delegate void OnClientEventDelegate(byte packetId, ref ClientEventEvent eventData);
+        public delegate void OnClientEventDelegate(byte packetId, ClientEventEvent eventData);
         public OnClientEventDelegate OnClientEvent;
 
-        public delegate void OnCarInfoDelegate(byte packetId, ref CarInfoEvent eventData);
+        public delegate void OnCarInfoDelegate(byte packetId, CarInfoEvent eventData);
         public OnCarInfoDelegate OnCarInfo;
 
-        public delegate void OnCarUpdateDelegate(byte packetId, ref CarUpdateEvent eventData);
+        public delegate void OnCarUpdateDelegate(byte packetId, CarUpdateEvent eventData);
         public OnCarUpdateDelegate OnCarUpdate;
 
-        public delegate void OnConnectionEventDelegate(byte packetId, ref ConnectionEvent eventData);
+        public delegate void OnConnectionEventDelegate(byte packetId, ConnectionEvent eventData);
         public OnConnectionEventDelegate OnNewConnection;
         public OnConnectionEventDelegate OnConnectionClosed;
 
-        public delegate void OnLapCompletedDelegate(byte packetId, ref LapCompletedEvent eventData);
+        public delegate void OnLapCompletedDelegate(byte packetId, LapCompletedEvent eventData);
         public OnLapCompletedDelegate OnLapCompleted;
 
-        public void DispatchMessages()
+        public async Task DispatchMessagesAsync()
         {
             while (true)
             {
-                var acsReader = new ACSProtocolReader(Receive());
+                var receiveResult = await _udpClient.ReceiveAsync();
+                var acsReader = new ACSProtocolReader(receiveResult.Buffer);
                 var packetId = acsReader.ReadByte();
 
                 switch (packetId)
@@ -205,7 +214,7 @@ namespace acsRankingPlugin
                     case ACSProtocol.ACSP_CHAT:
                         {
                             var eventData = new ChatEvent(acsReader);
-                            OnChat?.Invoke(packetId, ref eventData);
+                            OnChat?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_CLIENT_LOADED:
@@ -224,13 +233,13 @@ namespace acsRankingPlugin
                     case ACSProtocol.ACSP_NEW_SESSION:
                         {
                             var eventData = new SessionInfoEvent(acsReader);
-                            OnNewSession?.Invoke(packetId, ref eventData);
+                            OnNewSession?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_SESSION_INFO:
                         {
                             var eventData = new SessionInfoEvent(acsReader);
-                            OnSessionInfo?.Invoke(packetId, ref eventData);
+                            OnSessionInfo?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_END_SESSION:
@@ -242,37 +251,37 @@ namespace acsRankingPlugin
                     case ACSProtocol.ACSP_CLIENT_EVENT:
                         {
                             var eventData = new ClientEventEvent(acsReader);
-                            OnClientEvent?.Invoke(packetId, ref eventData);
+                            OnClientEvent?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_CAR_INFO:
                         {
                             var eventData = new CarInfoEvent(acsReader);
-                            OnCarInfo?.Invoke(packetId, ref eventData);
+                            OnCarInfo?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_CAR_UPDATE:
                         {
                             var eventData = new CarUpdateEvent(acsReader);
-                            OnCarUpdate?.Invoke(packetId, ref eventData);
+                            OnCarUpdate?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_NEW_CONNECTION:
                         {
                             var eventData = new ConnectionEvent(acsReader);
-                            OnNewConnection?.Invoke(packetId, ref eventData);
+                            OnNewConnection?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_CONNECTION_CLOSED:
                         {
                             var eventData = new ConnectionEvent(acsReader);
-                            OnConnectionClosed?.Invoke(packetId, ref eventData);
+                            OnConnectionClosed?.Invoke(packetId, eventData);
                         }
                         break;
                     case ACSProtocol.ACSP_LAP_COMPLETED:
                         {
                             var eventData = new LapCompletedEvent(acsReader);
-                            OnLapCompleted?.Invoke(packetId, ref eventData);
+                            OnLapCompleted?.Invoke(packetId, eventData);
                         }
                         break;
 
