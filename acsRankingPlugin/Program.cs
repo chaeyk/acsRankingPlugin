@@ -29,11 +29,9 @@ namespace acsRankingPlugin
             public bool Reset { get; set; }
         }
 
-        static Options options;
-        static Leaderboard leaderboard;
-
         static void Main(string[] args)
         {
+            Options options = null;
             Parser.Default.ParseArguments<Options>(args)
                 .WithParsed<Options>(o =>
                 {
@@ -56,9 +54,10 @@ namespace acsRankingPlugin
 
             var name = $"{options.Name}-{options.PluginPort}-{options.ServerPort}";
             var storagePath = $"{Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}\\acsRankingPlugin";
-            leaderboard = new Leaderboard(name, storagePath, options.Reset);
+            var leaderboard = new Leaderboard(name, storagePath, options.Reset);
 
             var acsClient = new ACSClient(options.PluginPort, options.ServerPort);
+            var carInfos = new CarInfos(acsClient);
 
             acsClient.OnError += (packetId, message) => Console.WriteLine(message);
             acsClient.OnChat += async (byte packetId, ChatEvent eventData) =>
@@ -70,13 +69,24 @@ namespace acsRankingPlugin
                     sb.AppendLine($"acsRankingPlugin {exeVersion} 명령어");
                     sb.AppendLine("=================================");
                     sb.AppendLine("?help : 도움말 표시");
-                    sb.AppendLine("?rank : 리더보드 표시");
+                    sb.AppendLine("?rank : 내 순위 근처의 리더보드");
+                    sb.AppendLine("?toprank : 상위권 리더보드");
+                    sb.AppendLine("?fullrank : 전체 리더보드");
                     sb.AppendLine("?ballast [숫자] : 자기 차 무게 증가 (kg)");
                     sb.AppendLine("=================================");
 
                     await acsClient.SendChatAsync(eventData.CarId, sb.ToString());
                 }
                 else if (eventData.Message == "?rank")
+                {
+                    var car = await carInfos.GetAsync(eventData.CarId);
+                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateMyRankTableAsync(car.CarName, car.DriverName));
+                }
+                else if (eventData.Message == "?toprank")
+                {
+                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateTopRankTableAsync());
+                }
+                else if (eventData.Message == "?fullrank")
                 {
                     await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateRankTableAsync());
                 }
@@ -100,7 +110,9 @@ namespace acsRankingPlugin
                 Console.WriteLine($"CLIENT LOADED: {carId}");
                 await acsClient.SendChatAsync(carId, "순위 보여주는 기능 테스트 중입니다.");
                 await acsClient.SendChatAsync(carId, "도움말은 ?help");
-                await acsClient.SendChatAsync(carId, await leaderboard.GenerateRankTableAsync());
+
+                var car = await carInfos.GetAsync(carId);
+                await acsClient.SendChatAsync(carId, await leaderboard.GenerateMyRankTableAsync(car.CarName, car.DriverName));
             };
             acsClient.OnVersion += (packetId, protocolVersion) => Console.WriteLine("PROTOCOL VERSION IS:" + (int)protocolVersion);
             acsClient.OnNewSession += async (byte packetId, SessionInfoEvent eventData) =>
@@ -109,7 +121,7 @@ namespace acsRankingPlugin
                 Console.WriteLine($"PROTOCOL: {eventData.Version}, SESSION {eventData.Name} {eventData.SessionIndex + 1}/{eventData.SessionCount}, TRACK: {eventData.Track}");
 
                 await leaderboard.SetTrackAsync(eventData.Track);
-                await acsClient.BroadcastChatAsync(await leaderboard.GenerateRankTableAsync());
+                await acsClient.BroadcastChatAsync(await leaderboard.GenerateTopRankTableAsync());
             };
             acsClient.OnSessionInfo += async (byte packetId, SessionInfoEvent eventData) =>
             {
@@ -130,45 +142,33 @@ namespace acsRankingPlugin
                         break;
                 }
             };
-            acsClient.OnCarInfo += async (byte packetId, CarInfoEvent eventData) =>
-            {
+            acsClient.OnCarInfo += (byte packetId, CarInfoEvent eventData) =>
                 Console.WriteLine($"CarInfo CAR:{eventData.CarId} {eventData.Model} [{eventData.Skin}] DRIVER:{eventData.DriverName} TEAM:{eventData.DriverTeam} GUID:{eventData.DriverGuid} CONNECTED:{eventData.IsConnected}");
-
-                var newRecord = await leaderboard.RegisterCarAsync(eventData.CarId, eventData.Model, eventData.DriverName);
-                if (newRecord != null)
-                {
-                    await acsClient.BroadcastChatAsync($"({eventData.CarId}) {newRecord.DriverName} 님이 새로운 {newRecord.Rank}위 기록({newRecord.Laptime.LaptimeFormat()})을 달성했습니다.");
-                }
-            };
             acsClient.OnCarUpdate += (byte packetId, CarUpdateEvent eventData) =>
                 Console.Write($"CarUpdate CAR:{eventData.CarId} POS:{eventData.Position} VEL:{eventData.Velocity} GEAR:{eventData.Gear} RPM:{eventData.Rpm} NSP:{eventData.NormalizedSplinePosition}");
-            acsClient.OnNewConnection += async (byte packetId, ConnectionEvent eventData) =>
-            {
+            acsClient.OnNewConnection += (byte packetId, ConnectionEvent eventData) =>
                 Console.WriteLine($"ACSP_NEW_CONNECTION {eventData.DriverName} ({eventData.DriverGuid}), {eventData.CarModel} [{eventData.CarSkin}] ({eventData.CarId})");
-
-                await leaderboard.RegisterCarAsync(eventData.CarId, eventData.CarModel, eventData.DriverName);
-            };
-            acsClient.OnConnectionClosed += async (byte packetId, ConnectionEvent eventData) =>
-            {
+            acsClient.OnConnectionClosed += (byte packetId, ConnectionEvent eventData) =>
                 Console.WriteLine($"ACSP_CONNECTION_CLOSED {eventData.DriverName} ({eventData.DriverGuid}), {eventData.CarModel} [{eventData.CarSkin}] ({eventData.CarId})");
-
-                await leaderboard.UnregisterCarAsync(eventData.CarId);
-            };
             acsClient.OnLapCompleted += async (byte packetId, LapCompletedEvent eventData) =>
             {
                 Console.WriteLine($"ACSP_LAP_COMPLETED CAR:{eventData.CarId} LAP:{eventData.LapTime} CUTS:{eventData.Cuts}");
 
                 if (eventData.Cuts <= 0)
                 {
-                    (var carFound, var newRecord) = await leaderboard.RegisterLaptimeAsync(eventData.CarId, eventData.LapTime);
-                    if (!carFound)
+                    try
                     {
-                        await acsClient.GetCarInfoAsync(eventData.CarId);
+                        var car = await carInfos.GetAsync(eventData.CarId);
+                        var newRecord = await leaderboard.RegisterLaptimeAsync(car.CarName, car.DriverName, eventData.LapTime);
+                        if (newRecord != null)
+                        {
+                            await acsClient.BroadcastChatAsync($"{newRecord.DriverName} 님이 새로운 {newRecord.Rank}위 기록({newRecord.Laptime.LaptimeFormat()})을 달성했습니다.");
+                        }
                     }
-
-                    if (newRecord != null)
+                    catch (Exception e)
                     {
-                        await acsClient.BroadcastChatAsync($"{newRecord.DriverName} 님이 새로운 {newRecord.Rank}위 기록({newRecord.Laptime.LaptimeFormat()})을 달성했습니다.");
+                        Console.WriteLine($"Unable to get car({eventData.CarId}). dropping laptime {eventData.LapTime}");
+                        Console.WriteLine(e);
                     }
                 }
             };

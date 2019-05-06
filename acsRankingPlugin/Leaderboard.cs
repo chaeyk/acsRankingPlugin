@@ -7,18 +7,6 @@ using System.Threading.Tasks;
 
 namespace acsRankingPlugin
 {
-    class Car
-    {
-        public string CarName { get; private set; }
-        public string DriverName { get; private set; }
-
-        public Car(string carName, string driverName)
-        {
-            CarName = carName;
-            DriverName = driverName;
-        }
-    }
-
     class NewRecord
     {
         public string DriverName { get; }
@@ -33,14 +21,24 @@ namespace acsRankingPlugin
         }
     }
 
+    class Record
+    {
+        public int Rank { get; }
+        public DriverLaptime DriverLaptime { get; }
+
+        public Record(int rank, DriverLaptime driverLaptime)
+        {
+            Rank = rank;
+            DriverLaptime = driverLaptime;
+        }
+    }
+
     class Leaderboard
     {
+        // 채팅창의 한 화면에 출력할 수 있는 레코드 수
+        private const int CHAT_WINDOW_RECORD_COUNT = 14;
+
         private IStorage _storage;
-
-        private Dictionary<int, Car> _cars = new Dictionary<int, Car>();
-        private Dictionary<int, TimeSpan> _laptimes = new Dictionary<int, TimeSpan>(); // car 정보가 없어서 저장하지 못한 랩타임
-
-        private AsyncLock _lock = new AsyncLock();
 
         public Leaderboard(string name, string storagePath, bool reset = false)
         {
@@ -56,72 +54,6 @@ namespace acsRankingPlugin
         public async Task SetTrackAsync(string track)
         {
             await _storage.SetTrackAsync(track);
-        }
-
-        // 차와 드라이버의 정보를 _cars에 저장하는데
-        // 전에 _cars에 정보가 없어 저장하지 못한 랩타임 등록도 여기서 한다.
-        // 랩타임이 새 기록이면 NewRecord가 리턴된다.
-        public async Task<NewRecord> RegisterCarAsync(int carId, string carName, string driverName)
-        {
-            var lk = await _lock.LockAsync();
-            var hasLock = true;
-            try
-            {
-                var car = _cars.TryGetValue(carId);
-                if (car == null)
-                {
-                    car = new Car(carName, driverName);
-                    _cars.Add(carId, new Car(carName, driverName));
-
-                    var laptime = _laptimes.Pop(carId);
-                    if (laptime != TimeSpan.Zero)
-                    {
-                        // RegisterLaptime()을 호출할 때 Lock을 유지해야 할 이유가 없다.
-                        hasLock = false;
-                        lk.Dispose();
-                        return await RegisterLaptimeAsync(car.CarName, car.DriverName, laptime);
-                    }
-                }
-                else
-                {
-                    // 서버가 재시작 되면 이런 일이 발생한다.
-                    // UDP socket 이라서 따로 감지할 수 있는 방법이 없다.
-                    var changed = false;
-                    if (car.CarName != carName)
-                    {
-                        Console.WriteLine($"carId[{carId}]'s model is changed: {car.CarName} -> {carName}");
-                        changed = true;
-                    }
-                    if (car.DriverName != driverName)
-                    {
-                        Console.WriteLine($"carId[{carId}]'s driver is changed: {car.DriverName} -> {driverName}");
-                        changed = true;
-                    }
-
-                    if (changed)
-                    {
-                        _cars.Remove(carId);
-                        _cars.Add(carId, new Car(carName, driverName));
-                    }
-                }
-                return null;
-            }
-            finally
-            {
-                if (hasLock)
-                {
-                    lk.Dispose();
-                }
-            }
-        }
-
-        public async Task UnregisterCarAsync(int carId)
-        {
-            using (await _lock.LockAsync())
-            {
-                _cars.Remove(carId);
-                _laptimes.Remove(carId); // _laptimes를 삭제하지 않으면, 나중에 다른 사람이 들어올 때 그 사람의 기록이 된다.
-            }
         }
 
         // 새로운 기록일 경우 NewRecord가 리턴된다.
@@ -152,49 +84,153 @@ namespace acsRankingPlugin
             return new NewRecord(driverName, rank, laptime);
         }
 
-        // carId 만으로 랩타임을 등록하려면, carname, drivername을 이미 가지고 있어야 한다.
-        // 없으면 _laptimes에 랩타임만 보관해놓고 나중에 RegisterCar()를 통해 랩타임을 등록해야 한다.
-        // 리턴값은 carId에 해당하는 car, driver 정보를 가지고 있었을 경우 true이다.
-        // false가 리턴되면 호출한 쪽에서는 RegisterCar()를 호출해 차량 정보를 제공해야 한다.
-        public async Task<(bool, NewRecord)> RegisterLaptimeAsync(int carId, TimeSpan laptime)
+        /**
+         * DriverLaptime List에 ranK를 붙여서 Record List를 만든다.
+         */
+        protected List<Record> MakeRecords(List<DriverLaptime> driverLaptimes)
         {
-            Car car = null;
-            using (await _lock.LockAsync())
-            {
-                car = _cars.TryGetValue(carId);
-                if (car == null)
-                {
-                    _laptimes.Add(carId, laptime);
-                    return (false, null);
-                }
-            }
-
-            var newRecord = await RegisterLaptimeAsync(car.CarName, car.DriverName, laptime);
-            return (true, newRecord);
-        }
-
-        public async Task<string> GenerateRankTableAsync()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"Leader Board ({await _storage.GetTimestampAsync()} ~ Now)");
-            sb.AppendLine("=================================");
-            sb.AppendLine("순위   시간        이름");
-            sb.AppendLine("=================================");
-
-            var records = await _storage.ListAsync();
+            var result = new List<Record>();
             int rank = 1;
-            for (var i = 0; i < records.Count; i++)
+            for (var i = 0; i < driverLaptimes.Count; i++)
             {
-                var record = records[i];
-                if (i > 0 && record.Laptime != records[i - 1].Laptime)
+                var driverLaptime = driverLaptimes[i];
+                if (i > 0 && driverLaptime.Laptime != driverLaptimes[i - 1].Laptime)
                 {
                     rank = i + 1;
                 }
-                sb.AppendLine(string.Format("{0,4}   {1,-9}  {2}", rank, record.Laptime.LaptimeFormat(), record.Driver));
+                result.Add(new Record(rank, driverLaptime));
             }
-            sb.AppendLine("=================================");
+            return result;
+        }
+
+        /**
+         * 상위 maxRow위까지 보여주는 리더보드 출력
+         */
+        public async Task<string> GenerateRankTableAsync(int maxRow = int.MaxValue)
+        {
+            var sb = new StringBuilder();
+            PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
+
+            var records = MakeRecords(await _storage.ListAsync());
+            if (records.Count > 0)
+            {
+                for (var i = 0; i < records.Count; i++)
+                {
+                    if (i == maxRow - 1 && i != records.Count - 1)
+                    {
+                        sb.AppendLine($"   ...  {records.Count - i}명이 더 있습니다 ...");
+                        break;
+                    }
+                    var record = records[i];
+                    PrintRankTableRecord(sb, record);
+                }
+            }
+            else
+            {
+                sb.AppendLine($"   기록이 없습니다.");
+            }
+            PrintRankTableBar(sb);
 
             return sb.ToString();
+        }
+
+        public Task<string> GenerateTopRankTableAsync()
+        {
+            return GenerateRankTableAsync(CHAT_WINDOW_RECORD_COUNT);
+        }
+
+        /**
+         * 내 순위를 가운데 두는 리더보드를 출력한다.
+         * 출력하는 레코드 갯수가 maxRow가 되도록 위, 아래를 자른다.
+         * 잘리더라도 1위와 꼴찌는 항상 보이도록 처리한다.
+         */
+        public async Task<string> GenerateMyRankTableAsync(string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
+        {
+            var driverLaptime = await _storage.GetAsync(car, driver);
+            if (driverLaptime == null || driverLaptime.Laptime == TimeSpan.Zero)
+            {
+                return await GenerateTopRankTableAsync();
+            }
+
+            var myRank = await _storage.GetRankAsync(driverLaptime.Laptime);
+
+            var sb = new StringBuilder();
+            PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
+
+            var records = MakeRecords(
+                (await _storage.ListAsync()).FindAll(v => v.Laptime != TimeSpan.Zero));
+
+            if (records.Count > 0)
+            {
+                // 순위 표시할 때 다음과 같이 하기위해 위,아래를 잘라내는 로직이 필요하다
+                // ------------   -- records.Count = 14, maxRow = 7, cutCount = 7
+                // 1. aaa         -- cutTop = 2
+                // ...
+                // 5. bbb         -- startIndex = 4
+                // 6. ccc         -- 내 위치는 가운데 (myRank = 6, myPrintOrder = 4)
+                // 7. ddd         -- endIndex = 7
+                // ...
+                // 14. eee        -- cutBottom = 5
+                var cutCount = Math.Max(0, records.Count - maxRow);
+                var myPrintOrder = (maxRow + 1) / 2; // 내 순위가 출력될 줄번호
+                var cutTop = Math.Max(0, myRank - myPrintOrder);
+                var cutBottom = cutCount - cutTop;
+
+                // 본인 순위가 바닥권이면 cutBottom이 마이너스가 나오고 상위가 많이 잘린다.
+                if (cutBottom < 0)
+                {
+                    cutTop += cutBottom;
+                    cutBottom = 0;
+                }
+
+                //Console.WriteLine($"cutCount:{cutCount}, myPrintOrder:{myPrintOrder}, cutTop:{cutTop}, cutBottom:{cutBottom}");
+
+                if (cutTop > 0)
+                {
+                    PrintRankTableRecord(sb, records[0]);
+                    sb.AppendLine("   ...");
+                }
+
+                var startIndex = cutTop > 0 ? cutTop + 2 : 0;
+                var endIndex = cutBottom > 0 ? records.Count - cutBottom - 2 : records.Count;
+                //Console.WriteLine($"startIndex:{startIndex}, endIndex:{endIndex}");
+                for (var i = startIndex; i < endIndex; i++)
+                {
+                    PrintRankTableRecord(sb, records[i]);
+                }
+
+                if (cutBottom > 0)
+                {
+                    sb.AppendLine("   ...");
+                    PrintRankTableRecord(sb, records.Last());
+                }
+            }
+            else
+            {
+                sb.AppendLine("   기록이 없습니다.");
+            }
+            PrintRankTableBar(sb);
+
+            return sb.ToString();
+        }
+
+        protected void PrintRankTableHeader(StringBuilder sb, DateTime timestamp)
+        {
+            sb.AppendLine($"Leader Board ({timestamp} ~ Now)");
+            PrintRankTableBar(sb);
+            sb.AppendLine("순위   시간        이름");
+            PrintRankTableBar(sb);
+        }
+
+        protected void PrintRankTableBar(StringBuilder sb)
+        {
+            sb.AppendLine("=================================");
+        }
+
+        protected void PrintRankTableRecord(StringBuilder sb, Record record)
+        {
+            sb.AppendLine(string.Format("{0,4}   {1,-9}  {2}",
+                record.Rank, record.DriverLaptime.Laptime.LaptimeFormat(), record.DriverLaptime.Driver));
         }
     }
 }

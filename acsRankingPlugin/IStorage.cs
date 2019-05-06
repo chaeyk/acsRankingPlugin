@@ -42,7 +42,7 @@ namespace acsRankingPlugin
         Task<DateTime> GetTimestampAsync();
 
         Task<string> GetTrackAsync();
-        Task SetTrackAsync(string track);
+        Task SetTrackAsync(string track); // 트랙이 바뀌면 전체 판이 바뀐 것으로 인식하고, 랩타임 데이터도 초기화한다.
 
         Task InsertAsync(DriverLaptime driverLaptime);
         Task UpdateAsync(DriverLaptime driverLaptime);

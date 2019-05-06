@@ -8,7 +8,8 @@ namespace acsRankingPlugin
 {
     static class Extensions
     {
-        // key가 없어서 null인 것과 value가 null인 것은 구분하지 못하지만, 이렇게 쓰는 게 편하다.
+        // key가 없어서 null인 것과 value가 null인 것은 구분하지 못하지만,
+        // value가 null이 아닌 것이 확실한 상황에서는 이렇게 쓰는 게 편하다.
         public static TValue TryGetValue<TKey, TValue>(this Dictionary<TKey, TValue> dic, TKey key)
         {
             dic.TryGetValue(key, out var value);

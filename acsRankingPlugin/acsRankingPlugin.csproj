@@ -96,6 +96,7 @@
     <Compile Include="ACSProtocol.cs" />
     <Compile Include="ACSProtocolReader.cs" />
     <Compile Include="ACSProtocolWriter.cs" />
+    <Compile Include="CarInfos.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="IStorage.cs" />
     <Compile Include="JsonNet.PrivateSettersContractResolvers\PrivateSettersContractResolvers.cs" />
