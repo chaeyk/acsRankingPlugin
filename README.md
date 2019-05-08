@@ -13,6 +13,7 @@ acsRankingPlugin.exe --server-port=9702 --plugin-port=9701
 그리고 서버에 플러그인 설정한 후 실행해야 한다.
 
 > **서버매니저 사용시**
+>
 > Advanced Options - Server Plugin 에서 Address에 127.0.0.1:9701, Local Port에 9702를 입력한다.
 
 > **서버 직접 실행시**
