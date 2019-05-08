@@ -25,6 +25,19 @@ acsRankingPlugin.exe --server-port=9702 --plugin-port=9701
 > UDP_PLUGIN_LOCAL_PORT=9702
 > ```
 
+도움말은 ``--help`` 옵션으로 볼 수 있다.
+
+```
+acsRankingPlugin --help
+```
+
+데이터를 초기화하려면 ``--reset`` 옵션을 사용해서 실행한다.
+
+```
+acsRankingPlugin.exe --server-port=9702 --plugin-port=9701 --reset
+```
+
+
 # 특징
 * 실행 순서는 서버를 먼저 시작해도 되고 플러그인을 먼저 시작해도 된다.
 * 중간에 서버나 플러그인을 종료했다가 재시작해도 데이터는 이어서 연동이 된다.
