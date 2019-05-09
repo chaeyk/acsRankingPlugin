@@ -21,6 +21,13 @@ namespace acsRankingPlugin
             _remoteEndpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), remotePort);
 
             _udpClient = new UdpClient(_localEndpoint);
+
+            // 서버보다 플러그인을 먼저 실행하면, 플러그인이 보낸 ACSP_GET_SESSION_INFO packet 때문에
+            // connection reset에 해당하는 ICMP packet이 와서 UDPClient.Receive()를 종료시킨다.
+            // UDP에서 connection reset 따위를 신경쓸 필요는 없으므로 무시하게 설정한다.
+            // https://stackoverflow.com/questions/38191968/c-sharp-udp-an-existing-connection-was-forcibly-closed-by-the-remote-host
+            const int SIO_UDP_CONNRESET = -1744830452;
+            _udpClient.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null);
         }
 
         /*
