@@ -108,7 +108,7 @@ namespace acsRankingPlugin
                 var car = _cars.TryGetValue(carId);
                 if (car != null)
                 {
-                    Console.WriteLine($"Car({car}) is unregistered.");
+                    Console.WriteLine($"Car({carId}) is unregistered.");
                     _cars.Remove(carId);
                 }
 

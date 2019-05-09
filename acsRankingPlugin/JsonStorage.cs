@@ -59,7 +59,7 @@ namespace acsRankingPlugin
                     _drivers = jsonData.Drivers;
                     _drivers.Sort();
                 }
-                catch (FileNotFoundException e)
+                catch (FileNotFoundException)
                 {
                     Console.WriteLine($"New leaderboard created.");
                 }

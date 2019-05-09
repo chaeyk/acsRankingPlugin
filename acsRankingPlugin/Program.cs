@@ -66,7 +66,7 @@ namespace acsRankingPlugin
                 {
                     var exeVersion = Assembly.GetExecutingAssembly().GetName().Version;
                     var sb = new StringBuilder();
-                    sb.AppendLine($"acsRankingPlugin {exeVersion} 명령어");
+                    sb.AppendLine($"tobot's acsRankingPlugin {exeVersion} 명령어");
                     sb.AppendLine("=================================");
                     sb.AppendLine("?help : 도움말 표시");
                     sb.AppendLine("?rank : 내 순위 근처의 리더보드");
