@@ -1,5 +1,4 @@
-﻿using JsonNet.PrivateSettersContractResolvers;
-using NeoSmart.AsyncLock;
+﻿using NeoSmart.AsyncLock;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -31,8 +30,7 @@ namespace acsRankingPlugin
 
         private JsonSerializerSettings _jsonSettings = new JsonSerializerSettings
         {
-            ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
-            ContractResolver = new PrivateSetterContractResolver()
+            ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor
         };
 
         private string _jsonfile;
@@ -51,13 +49,20 @@ namespace acsRankingPlugin
 
             if (!reset)
             {
-                var jsonData = JsonConvert.DeserializeObject<JsonData>(File.ReadAllText(_jsonfile), _jsonSettings);
-                Console.WriteLine($"Leaderboard loaded: {JsonConvert.SerializeObject(jsonData, _jsonSettings)}");
+                try
+                {
+                    var jsonData = JsonConvert.DeserializeObject<JsonData>(File.ReadAllText(_jsonfile), _jsonSettings);
+                    Console.WriteLine($"Leaderboard loaded: {JsonConvert.SerializeObject(jsonData, _jsonSettings)}");
 
-                _timestamp = jsonData.Timestamp;
-                _track = jsonData.Track;
-                _drivers = jsonData.Drivers;
-                _drivers.Sort();
+                    _timestamp = jsonData.Timestamp;
+                    _track = jsonData.Track;
+                    _drivers = jsonData.Drivers;
+                    _drivers.Sort();
+                }
+                catch (FileNotFoundException e)
+                {
+                    Console.WriteLine($"New leaderboard created.");
+                }
             }
         }
 
@@ -88,7 +93,7 @@ namespace acsRankingPlugin
                 var json = JsonConvert.SerializeObject(new JsonData(_timestamp, _track, _drivers), _jsonSettings);
                 var buffer = Encoding.UTF8.GetBytes(json);
 
-                using (FileStream fs = new FileStream(_jsonfile, FileMode.Truncate, FileAccess.Write, FileShare.Read, bufferSize: 4096, useAsync: true))
+                using (FileStream fs = new FileStream(_jsonfile, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 4096, useAsync: true))
                 {
                     await fs.WriteAsync(buffer, 0, buffer.Length);
                 }

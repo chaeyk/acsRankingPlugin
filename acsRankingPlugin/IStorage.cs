@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -10,11 +11,7 @@ namespace acsRankingPlugin
         public string Driver { get; set; }
         public TimeSpan Laptime { get; set; }
 
-        // for JSON.NET
-        private DriverLaptime()
-        {
-        }
-
+        [JsonConstructor]
         public DriverLaptime(string car, string driver, TimeSpan laptime)
         {
             Car = car;
