@@ -40,20 +40,9 @@ namespace acsRankingPlugin
 
         private IStorage _storage;
 
-        public Leaderboard(string name, string storagePath, bool reset = false)
+        public Leaderboard(IStorage storage)
         {
-            //_storage = new AccessDbStorage(storagePath, name, reset);
-            _storage = new JsonStorage(storagePath, name, reset);
-        }
-
-        public async Task<string> GetTrackAsync()
-        {
-            return await _storage.GetTrackAsync();
-        }
-
-        public async Task SetTrackAsync(string track)
-        {
-            await _storage.SetTrackAsync(track);
+            _storage = storage;
         }
 
         // 새로운 기록일 경우 NewRecord가 리턴된다.

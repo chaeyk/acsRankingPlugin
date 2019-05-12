@@ -54,7 +54,9 @@ namespace acsRankingPlugin
 
             var name = $"{options.Name}-{options.PluginPort}-{options.ServerPort}";
             var storagePath = $"{Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}\\acsRankingPlugin";
-            var leaderboard = new Leaderboard(name, storagePath, options.Reset);
+            //IStorage storage = new AccessDbStorage(storagePath, name, reset);
+            IStorage storage = new JsonStorage(storagePath, name, options.Reset);
+            var leaderboard = new Leaderboard(storage);
 
             var acsClient = new ACSClient(options.PluginPort, options.ServerPort);
             var carInfos = new CarInfos(acsClient);
@@ -120,14 +122,14 @@ namespace acsRankingPlugin
                 Console.WriteLine("New session started");
                 Console.WriteLine($"PROTOCOL: {eventData.Version}, SESSION {eventData.Name} {eventData.SessionIndex + 1}/{eventData.SessionCount}, TRACK: {eventData.Track}");
 
-                await leaderboard.SetTrackAsync(eventData.Track);
+                await storage.SetTrackAsync(eventData.Track);
                 await acsClient.BroadcastChatAsync(await leaderboard.GenerateTopRankTableAsync());
             };
             acsClient.OnSessionInfo += async (byte packetId, SessionInfoEvent eventData) =>
             {
                 Console.WriteLine($"PROTOCOL: {eventData.Version}, SESSION {eventData.Name} {eventData.SessionIndex + 1}/{eventData.SessionCount}, TRACK: {eventData.Track}");
 
-                await leaderboard.SetTrackAsync(eventData.Track);
+                await storage.SetTrackAsync(eventData.Track);
             };
             acsClient.OnEndSession += (packetId, reportFile) => Console.WriteLine($"ACSP_END_SESSION. REPORT JSON AVAILABLE AT: {reportFile}");
             acsClient.OnClientEvent += (byte packetId, ClientEventEvent eventData) =>
