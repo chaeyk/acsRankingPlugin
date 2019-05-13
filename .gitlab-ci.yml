@@ -1,0 +1,46 @@
+stages:
+  - build
+  - release
+
+build:
+  stage: build
+  tags:
+    - visualstudio2017
+  script:
+    - nuget restore
+    - msbuild /p:Configuration=Release /p:OutputPath=%CI_PROJECT_DIR%\out
+    - cd out
+    - zip release.zip *.exe *.dll
+  artifacts:
+    paths:
+      - out
+    expire_in: 1 hrs
+
+.version-tag:
+  only:
+    - /^v[0-9]+(\.[0-9]+)*$/
+  except:
+    - branches
+
+github-release:
+  extends: .version-tag
+  stage: release
+  image: chaeyk/ubuntu
+  script:
+    - >-
+      RESULT=$(
+      curl -sS https://api.github.com/repos/chaeyk/acsRankingPlugin/releases
+      -XPOST
+      -d"{\"tag_name\":\"$CI_COMMIT_TAG\"}" -H "Authorization: token $GITHUB_API_TOKEN"
+      )
+    - echo "$RESULT"
+    - URL=$(echo "$RESULT" | jp --unquoted upload_url)
+    - >-
+      curl -sS -XPOST
+      ${URL%\{*}?name=release-$CI_COMMIT_TAG.zip
+      -H "Content-Type: application/zip"
+      -H "Authorization: token $GITHUB_API_TOKEN"
+      -T out/release.zip
+
+
+
