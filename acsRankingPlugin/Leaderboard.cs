@@ -1,6 +1,7 @@
 ﻿using NeoSmart.AsyncLock;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -25,11 +26,138 @@ namespace acsRankingPlugin
     {
         public int Rank { get; }
         public DriverLaptime DriverLaptime { get; }
+        public string CarShortName { get; set; }
 
         public Record(int rank, DriverLaptime driverLaptime)
         {
             Rank = rank;
             DriverLaptime = driverLaptime;
+            CarShortName = DriverLaptime.Car.Substring(0, 3);
+        }
+    }
+
+    class Records
+    {
+        private List<Record> _records = new List<Record>();
+        private HashSet<string> _cars = new HashSet<string>();
+
+        public Record this[int index]
+        {
+            get { return _records[index]; }
+            set { _records[index] = value; }
+        }
+
+        public int Count { get { return _records.Count; } }
+
+        public bool IsMixedCar { get { return _cars.Count > 1; } }
+
+        public Records(IList<DriverLaptime> driverLaptimes, IReadOnlyDictionary<string, string> carShortNameMap)
+        {
+            int rank = 1;
+            for (var i = 0; i < driverLaptimes.Count; i++)
+            {
+                var driverLaptime = driverLaptimes[i];
+                if (i > 0 && driverLaptime.Laptime != driverLaptimes[i - 1].Laptime)
+                {
+                    rank = i + 1;
+                }
+                Add(new Record(rank, driverLaptime));
+            }
+
+            Dictionary<string, string> nameMap =
+                new Dictionary<string, string>(carShortNameMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+            RegenerateCarShortName(nameMap);
+        }
+
+        /// <summary>
+        /// Record.CarShort 는 원래 차 이름의 첫번째 3글자를 사용하지만 다른 차와 겹칠 수도 있다.
+        /// 겹치지 않도록 이름을 정리한다.
+        /// </summary>
+        protected void RegenerateCarShortName(Dictionary<string, string> nameMap)
+        {
+            foreach (var record in _records)
+            {
+                var car = record.DriverLaptime.Car;
+                if (nameMap.ContainsKey(car))
+                {
+                    continue;
+                }
+                GenerateShortName(car, nameMap);
+            }
+            foreach (var record in _records)
+            {
+                record.CarShortName = nameMap[record.DriverLaptime.Car];
+            }
+        }
+
+        protected void GenerateShortName(string car, Dictionary<string, string> nameMap)
+        {
+            if (!GenerateShortName(car, car, nameMap))
+            {
+                for (var i = 0; i < 10; i++)
+                {
+                    var shortname = "ca" + i;
+                    if (TryShortName(car, shortname, nameMap))
+                        return;
+                }
+                nameMap.Add(car, car.Substring(0, 3));
+                return;
+            }
+        }
+
+        protected bool GenerateShortName(string fullname, string name, Dictionary<string, string> nameMap)
+        {
+            string[] parts = name.Split('_');
+            if (parts.Length > 1)
+            {
+                foreach (var part in parts.Reverse())
+                {
+                    if (GenerateShortName(fullname, part, nameMap))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else
+            {
+                if (name.Length == 0)
+                    return false;
+
+                if (name.Length < 3)
+                {
+                    return TryShortName(fullname, name, nameMap);
+                }
+
+                for (var i = 0; i <= name.Length - 3; i++)
+                {
+                    var shortname = name.Substring(i, 3);
+                    if (TryShortName(fullname, shortname, nameMap))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        protected bool TryShortName(string fullname, string shortname, Dictionary<string, string> nameMap)
+        {
+            if (nameMap.ContainsValue(shortname))
+            {
+                return false;
+            }
+            nameMap.Add(fullname, shortname);
+            return true;
+        }
+
+        protected void Add(Record record)
+        {
+            _records.Add(record);
+            _cars.Add(record.DriverLaptime.Car);
+        }
+
+        public Record Last()
+        {
+            return _records.Last();
         }
     }
 
@@ -74,33 +202,14 @@ namespace acsRankingPlugin
         }
 
         /**
-         * DriverLaptime List에 ranK를 붙여서 Record List를 만든다.
-         */
-        protected List<Record> MakeRecords(List<DriverLaptime> driverLaptimes)
-        {
-            var result = new List<Record>();
-            int rank = 1;
-            for (var i = 0; i < driverLaptimes.Count; i++)
-            {
-                var driverLaptime = driverLaptimes[i];
-                if (i > 0 && driverLaptime.Laptime != driverLaptimes[i - 1].Laptime)
-                {
-                    rank = i + 1;
-                }
-                result.Add(new Record(rank, driverLaptime));
-            }
-            return result;
-        }
-
-        /**
          * 상위 maxRow위까지 보여주는 리더보드 출력
          */
-        public async Task<string> GenerateRankTableAsync(int maxRow = int.MaxValue)
+        public async Task<string> GenerateRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap, int maxRow = int.MaxValue)
         {
             var sb = new StringBuilder();
             PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
 
-            var records = MakeRecords(await _storage.ListAsync());
+            var records = new Records(await _storage.ListAsync(), carShortNameMap);
             if (records.Count > 0)
             {
                 for (var i = 0; i < records.Count; i++)
@@ -111,7 +220,7 @@ namespace acsRankingPlugin
                         break;
                     }
                     var record = records[i];
-                    PrintRankTableRecord(sb, record);
+                    PrintRankTableRecord(sb, record, records.IsMixedCar);
                 }
             }
             else
@@ -123,9 +232,9 @@ namespace acsRankingPlugin
             return sb.ToString();
         }
 
-        public Task<string> GenerateTopRankTableAsync()
+        public Task<string> GenerateTopRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap)
         {
-            return GenerateRankTableAsync(CHAT_WINDOW_RECORD_COUNT);
+            return GenerateRankTableAsync(carShortNameMap, CHAT_WINDOW_RECORD_COUNT);
         }
 
         /**
@@ -133,12 +242,12 @@ namespace acsRankingPlugin
          * 출력하는 레코드 갯수가 maxRow가 되도록 위, 아래를 자른다.
          * 잘리더라도 1위와 꼴찌는 항상 보이도록 처리한다.
          */
-        public async Task<string> GenerateMyRankTableAsync(string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
+        public async Task<string> GenerateMyRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap, string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
         {
             var driverLaptime = await _storage.GetAsync(car, driver);
             if (driverLaptime == null || driverLaptime.Laptime == TimeSpan.Zero)
             {
-                return await GenerateTopRankTableAsync();
+                return await GenerateTopRankTableAsync(carShortNameMap);
             }
 
             var myRank = await _storage.GetRankAsync(driverLaptime.Laptime);
@@ -146,8 +255,8 @@ namespace acsRankingPlugin
             var sb = new StringBuilder();
             PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
 
-            var records = MakeRecords(
-                (await _storage.ListAsync()).FindAll(v => v.Laptime != TimeSpan.Zero));
+            var records = new Records(
+                (await _storage.ListAsync()).FindAll(v => v.Laptime != TimeSpan.Zero), carShortNameMap);
 
             if (records.Count > 0)
             {
@@ -176,7 +285,7 @@ namespace acsRankingPlugin
 
                 if (cutTop > 0)
                 {
-                    PrintRankTableRecord(sb, records[0]);
+                    PrintRankTableRecord(sb, records[0], records.IsMixedCar);
                     sb.AppendLine("   ...");
                 }
 
@@ -185,13 +294,13 @@ namespace acsRankingPlugin
                 //Console.WriteLine($"startIndex:{startIndex}, endIndex:{endIndex}");
                 for (var i = startIndex; i < endIndex; i++)
                 {
-                    PrintRankTableRecord(sb, records[i]);
+                    PrintRankTableRecord(sb, records[i], records.IsMixedCar);
                 }
 
                 if (cutBottom > 0)
                 {
                     sb.AppendLine("   ...");
-                    PrintRankTableRecord(sb, records.Last());
+                    PrintRankTableRecord(sb, records.Last(), records.IsMixedCar);
                 }
             }
             else
@@ -216,10 +325,18 @@ namespace acsRankingPlugin
             sb.AppendLine("=================================");
         }
 
-        protected void PrintRankTableRecord(StringBuilder sb, Record record)
+        protected void PrintRankTableRecord(StringBuilder sb, Record record, bool isMixedCar)
         {
-            sb.AppendLine(string.Format("{0,4}   {1,-9}  {2}",
-                record.Rank, record.DriverLaptime.Laptime.LaptimeFormat(), record.DriverLaptime.Driver));
+            if (isMixedCar)
+            {
+                sb.AppendLine(string.Format("{0,4}   {1,-9}  ({2,3}) {3}",
+                    record.Rank, record.DriverLaptime.Laptime.LaptimeFormat(), record.CarShortName, record.DriverLaptime.Driver));
+            }
+            else
+            {
+                sb.AppendLine(string.Format("{0,4}   {1,-9}  {2}",
+                    record.Rank, record.DriverLaptime.Laptime.LaptimeFormat(), record.DriverLaptime.Driver));
+            }
         }
     }
 }

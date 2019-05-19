@@ -1,13 +1,10 @@
 ﻿using CommandLine;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Collections.ObjectModel;
 using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace acsRankingPlugin
 {
@@ -24,6 +21,43 @@ namespace acsRankingPlugin
 
             [Option("plugin-port", Required = true, HelpText = "This plugin's listening UDP port.")]
             public int PluginPort { get; set; }
+
+            [Option("car-name", Required = false, Separator = ',',
+                HelpText = "Mapping long car name to short 3 chr name for leaderboard. ex> --car-name ks_ferrari_sf70h=70h,ks_ferrari_sf15t=15t")]
+            public IEnumerable<string> CarNames
+            {
+                set
+                {
+                    var nameMap = new Dictionary<string, string>();
+                    foreach (var opt in value)
+                    {
+                        string[] parts = opt.Split('=');
+                        if (parts.Length != 2 || parts[0].Length <= 0)
+                        {
+                            throw new Exception($"Invalid --car-name option: {opt}");
+                        }
+                        if (parts[1].Length <= 0 || parts[1].Length > 3)
+                        {
+                            throw new Exception($"Invalid short name [{parts[1]}] of {parts[0]}.");
+                        }
+                        if (nameMap.ContainsKey(parts[0]))
+                        {
+                            throw new Exception($"--car-name option already has {parts[0]}: {opt}");
+                        }
+                        if (nameMap.ContainsValue(parts[1]))
+                        {
+                            throw new Exception($"--car-name option already has short name {parts[1]}: {opt}");
+                        }
+
+                        nameMap.Add(parts[0], parts[1]);
+                        Console.WriteLine($"Car name mapping: {parts[0]} -> {parts[1]}");
+                    }
+                    CarShortNameMap = new ReadOnlyDictionary<string, string>(nameMap);
+                }
+            }
+
+            public IReadOnlyDictionary<string, string> CarShortNameMap { get; private set; } =
+                new ReadOnlyDictionary<string, string>(new Dictionary<string, string>());
 
             [Option("reset", HelpText = "Reset data.")]
             public bool Reset { get; set; }
@@ -82,15 +116,15 @@ namespace acsRankingPlugin
                 else if (eventData.Message == "?rank")
                 {
                     var car = await carInfos.GetAsync(eventData.CarId);
-                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateMyRankTableAsync(car.CarName, car.DriverName));
+                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateMyRankTableAsync(options.CarShortNameMap, car.CarName, car.DriverName));
                 }
                 else if (eventData.Message == "?toprank")
                 {
-                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateTopRankTableAsync());
+                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateTopRankTableAsync(options.CarShortNameMap));
                 }
                 else if (eventData.Message == "?fullrank")
                 {
-                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateRankTableAsync());
+                    await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateRankTableAsync(options.CarShortNameMap));
                 }
                 else if (eventData.Message.StartsWith("?ballast "))
                 {
@@ -114,7 +148,7 @@ namespace acsRankingPlugin
                 await acsClient.SendChatAsync(carId, "도움말은 ?help");
 
                 var car = await carInfos.GetAsync(carId);
-                await acsClient.SendChatAsync(carId, await leaderboard.GenerateMyRankTableAsync(car.CarName, car.DriverName));
+                await acsClient.SendChatAsync(carId, await leaderboard.GenerateMyRankTableAsync(options.CarShortNameMap, car.CarName, car.DriverName));
             };
             acsClient.OnVersion += (packetId, protocolVersion) => Console.WriteLine("PROTOCOL VERSION IS:" + (int)protocolVersion);
             acsClient.OnNewSession += async (byte packetId, SessionInfoEvent eventData) =>
@@ -123,7 +157,7 @@ namespace acsRankingPlugin
                 Console.WriteLine($"PROTOCOL: {eventData.Version}, SESSION {eventData.Name} {eventData.SessionIndex + 1}/{eventData.SessionCount}, TRACK: {eventData.Track}");
 
                 await storage.SetTrackAsync(eventData.Track);
-                await acsClient.BroadcastChatAsync(await leaderboard.GenerateTopRankTableAsync());
+                await acsClient.BroadcastChatAsync(await leaderboard.GenerateTopRankTableAsync(options.CarShortNameMap));
             };
             acsClient.OnSessionInfo += async (byte packetId, SessionInfoEvent eventData) =>
             {

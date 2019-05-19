@@ -31,6 +31,12 @@ acsRankingPlugin.exe --server-port=9702 --plugin-port=9701
 acsRankingPlugin --help
 ```
 
+리더보드에 차량이 여러 종류가 있으면 유저 앞에 차량 이름을 3글자로 보여준다. 3글자 이름은 자동으로 생성되는데 이게 마음에 들지 않으면 ``--car-name`` 옵션으로 이름을 직접 지정할 수 있다.
+
+```
+--car-name ks_ferrari_sf15t=15t,ks_ferrari_sf70h=70h
+```
+
 데이터를 초기화하려면 ``--reset`` 옵션을 사용해서 실행한다.
 
 ```
