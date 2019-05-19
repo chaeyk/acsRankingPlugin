@@ -25,6 +25,8 @@ build:
 github-release:
   extends: .version-tag
   stage: release
+  tags:
+    - docker
   image: chaeyk/ubuntu
   script:
     - >-
