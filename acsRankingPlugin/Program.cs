@@ -108,6 +108,7 @@ namespace acsRankingPlugin
                     sb.AppendLine("?rank : 내 순위 근처의 리더보드");
                     sb.AppendLine("?toprank : 상위권 리더보드");
                     sb.AppendLine("?fullrank : 전체 리더보드");
+                    sb.AppendLine("?carname : 차량 이름 변환표");
                     sb.AppendLine("?ballast [숫자] : 자기 차 무게 증가 (kg)");
                     sb.AppendLine("=================================");
 
@@ -125,6 +126,12 @@ namespace acsRankingPlugin
                 else if (eventData.Message == "?fullrank")
                 {
                     await acsClient.SendChatAsync(eventData.CarId, await leaderboard.GenerateRankTableAsync(options.CarShortNameMap));
+                }
+                else if (eventData.Message == "?carname")
+                {
+                    var records = new Records(await storage.ListAsync(), options.CarShortNameMap);
+                    await acsClient.SendChatAsync(eventData.CarId, records.GenerateCarShortNameMapTable());
+
                 }
                 else if (eventData.Message.StartsWith("?ballast "))
                 {

@@ -41,6 +41,8 @@ namespace acsRankingPlugin
         private List<Record> _records = new List<Record>();
         private HashSet<string> _cars = new HashSet<string>();
 
+        public ReadOnlyDictionary<string, string> CarShortNameMap { get; private set; }
+
         public Record this[int index]
         {
             get { return _records[index]; }
@@ -61,20 +63,22 @@ namespace acsRankingPlugin
                 {
                     rank = i + 1;
                 }
-                Add(new Record(rank, driverLaptime));
+                _records.Add(new Record(rank, driverLaptime));
+                _cars.Add(driverLaptime.Car);
             }
 
-            Dictionary<string, string> nameMap =
-                new Dictionary<string, string>(carShortNameMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
-            RegenerateCarShortName(nameMap);
+            RegenerateCarShortName(carShortNameMap);
         }
 
         /// <summary>
         /// Record.CarShort 는 원래 차 이름의 첫번째 3글자를 사용하지만 다른 차와 겹칠 수도 있다.
         /// 겹치지 않도록 이름을 정리한다.
         /// </summary>
-        protected void RegenerateCarShortName(Dictionary<string, string> nameMap)
+        protected void RegenerateCarShortName(IReadOnlyDictionary<string, string> carShortNameMap)
         {
+            Dictionary<string, string> nameMap =
+                new Dictionary<string, string>(carShortNameMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+
             foreach (var record in _records)
             {
                 var car = record.DriverLaptime.Car;
@@ -84,6 +88,8 @@ namespace acsRankingPlugin
                 }
                 GenerateShortName(car, nameMap);
             }
+            CarShortNameMap = new ReadOnlyDictionary<string, string>(nameMap);
+
             foreach (var record in _records)
             {
                 record.CarShortName = nameMap[record.DriverLaptime.Car];
@@ -149,10 +155,23 @@ namespace acsRankingPlugin
             return true;
         }
 
-        protected void Add(Record record)
+        public string GenerateCarShortNameMapTable()
         {
-            _records.Add(record);
-            _cars.Add(record.DriverLaptime.Car);
+            var sb = new StringBuilder();
+            sb.AppendLine("=================================");
+            if (CarShortNameMap.Count > 0)
+            {
+                foreach (var kvp in CarShortNameMap)
+                {
+                    sb.AppendLine($"{kvp.Value} -> {kvp.Key}");
+                }
+            }
+            else
+            {
+                sb.AppendLine("  no records");
+            }
+            sb.AppendLine("=================================");
+            return sb.ToString();
         }
 
         public Record Last()
