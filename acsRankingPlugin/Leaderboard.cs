@@ -216,19 +216,25 @@ namespace acsRankingPlugin
                 await _storage.UpdateAsync(record);
             }
 
-            var rank = await _storage.GetRankAsync(laptime);
+            var laptimes = await _storage.ListAsync();
+            var rank = GetRank(laptimes, laptime);
             return new NewRecord(driverName, rank, laptime);
+        }
+
+        public int GetRank(List<DriverLaptime> laptimes, TimeSpan laptime)
+        {
+            return laptimes.FindAll(v => v.Laptime < laptime).Count + 1;
         }
 
         /**
          * 상위 maxRow위까지 보여주는 리더보드 출력
          */
-        public async Task<string> GenerateRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap, int maxRow = int.MaxValue)
+        public async Task<string> GenerateRankTableAsync(List<DriverLaptime> laptimes, IReadOnlyDictionary<string, string> carShortNameMap, int maxRow = int.MaxValue)
         {
             var sb = new StringBuilder();
             PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
 
-            var records = new Records(await _storage.ListAsync(), carShortNameMap);
+            var records = new Records(laptimes, carShortNameMap);
             if (records.Count > 0)
             {
                 for (var i = 0; i < records.Count; i++)
@@ -251,9 +257,9 @@ namespace acsRankingPlugin
             return sb.ToString();
         }
 
-        public Task<string> GenerateTopRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap)
+        public Task<string> GenerateTopRankTableAsync(List<DriverLaptime> laptimes, IReadOnlyDictionary<string, string> carShortNameMap)
         {
-            return GenerateRankTableAsync(carShortNameMap, CHAT_WINDOW_RECORD_COUNT);
+            return GenerateRankTableAsync(laptimes, carShortNameMap, CHAT_WINDOW_RECORD_COUNT);
         }
 
         /**
@@ -261,21 +267,21 @@ namespace acsRankingPlugin
          * 출력하는 레코드 갯수가 maxRow가 되도록 위, 아래를 자른다.
          * 잘리더라도 1위와 꼴찌는 항상 보이도록 처리한다.
          */
-        public async Task<string> GenerateMyRankTableAsync(IReadOnlyDictionary<string, string> carShortNameMap, string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
+        public async Task<string> GenerateMyRankTableAsync(List<DriverLaptime> laptimes, IReadOnlyDictionary<string, string> carShortNameMap,
+            string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
         {
             var driverLaptime = await _storage.GetAsync(car, driver);
             if (driverLaptime == null || driverLaptime.Laptime == TimeSpan.Zero)
             {
-                return await GenerateTopRankTableAsync(carShortNameMap);
+                return await GenerateTopRankTableAsync(laptimes, carShortNameMap);
             }
 
-            var myRank = await _storage.GetRankAsync(driverLaptime.Laptime);
+            var myRank = GetRank(laptimes, driverLaptime.Laptime);
 
             var sb = new StringBuilder();
             PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
 
-            var records = new Records(
-                (await _storage.ListAsync()).FindAll(v => v.Laptime != TimeSpan.Zero), carShortNameMap);
+            var records = new Records(laptimes, carShortNameMap);
 
             if (records.Count > 0)
             {
@@ -344,9 +350,9 @@ namespace acsRankingPlugin
             sb.AppendLine("=================================");
         }
 
-        protected void PrintRankTableRecord(StringBuilder sb, Record record, bool isMixedCar)
+        protected void PrintRankTableRecord(StringBuilder sb, Record record, bool withCar)
         {
-            if (isMixedCar)
+            if (withCar)
             {
                 sb.AppendLine(string.Format("{0,4}   {1,-9}  ({2,3}) {3}",
                     record.Rank, record.DriverLaptime.Laptime.LaptimeFormat(), record.CarShortName, record.DriverLaptime.Driver));

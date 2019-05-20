@@ -45,7 +45,6 @@ namespace acsRankingPlugin
         Task UpdateAsync(DriverLaptime driverLaptime);
         Task<DriverLaptime> GetAsync(string car, string driver);
         Task<List<DriverLaptime>> ListAsync();
-        Task<int> GetRankAsync(TimeSpan laptime);
         Task ResetAsync(); // 랩타임 데이터를 모두 삭제한다.
     }
 }

@@ -145,14 +145,6 @@ namespace acsRankingPlugin
             }
         }
 
-        public async Task<int> GetRankAsync(TimeSpan laptime)
-        {
-            using (await _lock.LockAsync())
-            {
-                return _drivers.FindAll(v => v.Laptime < laptime).Count + 1;
-            }
-        }
-
         public async Task ResetAsync()
         {
             using (await _lock.LockAsync())

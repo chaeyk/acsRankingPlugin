@@ -213,16 +213,6 @@ namespace acsRankingPlugin
             return result;
         }
 
-        public async Task<int> GetRankAsync(TimeSpan laptime)
-        {
-            using (await _lock.LockAsync())
-            {
-                var command = new OleDbCommand("select count(*) from DriverLaptime where laptime < @laptime", _conn);
-                command.Parameters.AddWithValue("@laptime", laptime.TotalMilliseconds);
-                return (int)await command.ExecuteScalarAsync() + 1;
-            }
-        }
-
         public async Task ResetAsync()
         {
             using (await _lock.LockAsync())
