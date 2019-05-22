@@ -168,7 +168,7 @@ namespace acsRankingPlugin
                 drivers.Add(v.Driver);
                 return true;
             });
-            return await GenerateRankAsync(laptimes, car, driver, cmds);
+            return await GenerateRankAsync(laptimes, "", driver, cmds);
         }
 
         protected async Task<string> GenerateRankAsync(List<DriverLaptime> laptimes, string car, string driver, string[] cmds)

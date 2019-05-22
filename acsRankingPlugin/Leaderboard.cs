@@ -270,13 +270,14 @@ namespace acsRankingPlugin
         public async Task<string> GenerateMyRankTableAsync(List<DriverLaptime> laptimes, IReadOnlyDictionary<string, string> carShortNameMap,
             string car, string driver, int maxRow = CHAT_WINDOW_RECORD_COUNT)
         {
-            var driverLaptime = await _storage.GetAsync(car, driver);
+            var myIndex = laptimes.FindIndex(v => (string.IsNullOrEmpty(car) || v.Car == car) && v.Driver == driver);
+            var driverLaptime = myIndex >= 0 ? laptimes[myIndex] : null;
             if (driverLaptime == null || driverLaptime.Laptime == TimeSpan.Zero)
             {
                 return await GenerateTopRankTableAsync(laptimes, carShortNameMap);
             }
 
-            var myRank = GetRank(laptimes, driverLaptime.Laptime);
+            var myRank = myIndex + 1;
 
             var sb = new StringBuilder();
             PrintRankTableHeader(sb, await _storage.GetTimestampAsync());
