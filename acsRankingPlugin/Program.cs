@@ -86,8 +86,10 @@ namespace acsRankingPlugin
         protected async void OnChat(byte packetId, ChatEvent eventData)
         {
             var cmds = eventData.Message.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (cmds.Length <= 0)
+                return;
 
-            if (cmds.Length == 1 && cmds[0] == "?help")
+            if (cmds[0] == "?help")
             {
                 var exeVersion = Assembly.GetExecutingAssembly().GetName().Version;
                 var sb = new StringBuilder();
@@ -119,7 +121,7 @@ namespace acsRankingPlugin
                 var car = await _carInfos.GetAsync(eventData.CarId);
                 await _acsClient.SendChatAsync(eventData.CarId, await GenerateDriverrankAsync(car.CarName, car.DriverName, cmds));
             }
-            else if (cmds.Length == 1 && cmds[0] == "?carname")
+            else if (cmds[0] == "?carname")
             {
                 var records = new Records(await _storage.ListAsync(), _options.CarShortNameMap);
                 await _acsClient.SendChatAsync(eventData.CarId, records.GenerateCarShortNameMapTable());
